@@ -10,7 +10,7 @@ the physical received frequency for rffit we add the correction back:
 (exactly as strf's satnogs_waterfall_tabulation_helper.py does). This is independent of which TLE
 was used to correct, so it is non-circular -- it recovers the actual received Doppler curve."""
 from __future__ import annotations
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 from skyfield.api import EarthSatellite, load, wgs84
@@ -18,6 +18,17 @@ from skyfield.api import EarthSatellite, load, wgs84
 C_KM_S = 299792.458
 MJD_EPOCH = datetime(1858, 11, 17, tzinfo=timezone.utc)
 _TS = load.timescale(builtin=True)
+
+
+def tle_epoch(line1: str) -> datetime:
+    """Parse the epoch (columns 19-32, `YYDDD.dddddddd`) of TLE line 1 into a UTC datetime. Used to
+    measure how far a candidate's elements must be propagated to the observation -- the thing that
+    governs whether current (CelesTrak) elements are still valid for a given observation."""
+    field = line1[18:32]
+    yy = int(field[:2])
+    doy = float(field[2:])
+    year = 2000 + yy if yy < 57 else 1900 + yy
+    return datetime(year, 1, 1, tzinfo=timezone.utc) + timedelta(days=doy - 1.0)
 
 
 def range_rate_km_s(tle1: str, tle2: str, lat: float, lon: float, alt_m: float,
