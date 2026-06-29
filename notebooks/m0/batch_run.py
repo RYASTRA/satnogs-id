@@ -18,17 +18,31 @@ def make_dat(h5path, siteid, datpath):
     start = datetime.fromisoformat(_st.replace('Z','+00:00'))
     T, F = data.shape
     dB = data.astype(np.float32)*scale[None,:] + offset[None,:]
-    peak = np.argmax(dB, axis=1); snr = dB[np.arange(T), peak] - np.median(dB, axis=1)
-    hi = snr >= np.percentile(snr, 85); carrier = float(np.median(freqax[peak[hi]]))
-    idx = np.where(hi & (np.abs(freqax[peak]-carrier) < 6000))[0]
+    dfbin = float(freqax[1] - freqax[0])
+    peak0 = np.argmax(dB, axis=1); snr = dB[np.arange(T), peak0] - np.median(dB, axis=1)
+    hi = np.where(snr >= np.percentile(snr, 80))[0]
+    cbin = int(np.argmax(dB[hi].mean(axis=0)))         # carrier from integrated high-SNR spectrum
+    win = max(3, int(4000/dfbin))                      # +-4 kHz search window around the (near-vertical) carrier
     st = wgs84.latlon(loc['latitude'], loc['longitude'], elevation_m=loc['altitude'])
     sat = EarthSatellite(t0[1], t0[2], 'x', ts)
+    pts = []                                           # (relt, freq-offset) with sub-bin parabolic peak
+    for i in hi:
+        lo, hib = max(1, cbin-win), min(F-1, cbin+win)
+        p = lo + int(np.argmax(dB[i, lo:hib]))
+        y0, y1, y2 = dB[i, p-1], dB[i, p], dB[i, p+1]
+        den = y0 - 2*y1 + y2
+        delta = float(np.clip(0.5*(y0-y2)/den, -1, 1)) if den != 0 else 0.0
+        pts.append((float(relt[i]), freqax[p] + delta*dfbin))
+    pts = np.array(pts)
+    for _ in range(3):                                 # iterative MAD outlier rejection (vertical line -> ~constant offset)
+        med = np.median(pts[:, 1]); mad = np.median(np.abs(pts[:, 1] - med)) + 1e-9
+        pts = pts[np.abs(pts[:, 1] - med) < 4*mad]
     rows = []
-    for i in idx:
-        dt = start + timedelta(seconds=float(relt[i]))
+    for relt_i, foff in pts:
+        dt = start + timedelta(seconds=float(relt_i))
         pos = (sat - st).at(ts.from_datetime(dt)); r = pos.position.km; v = pos.velocity.km_per_s
         rr = float(np.sum(r*v)/np.linalg.norm(r))
-        rows.append(((dt-EPOCH).total_seconds()/86400.0, f0 + float(freqax[peak[i]]) - f0*rr/C))
+        rows.append(((dt-EPOCH).total_seconds()/86400.0, f0 + float(foff) - f0*rr/C))
     rows.sort()
     with open(datpath, 'w') as g:
         for mj, fr in rows: g.write(f'{mj:.6f}\t{fr:.2f}\t1.0\t{siteid}\n')
