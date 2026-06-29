@@ -1,0 +1,6 @@
+numpy
+scipy
+skyfield
+h5py
+requests
+matplotlib
