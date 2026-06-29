@@ -1,22 +1,33 @@
 """Host-side: build a larger eval set for the Geoscan cluster -- for each of the 6
 near-identical Geoscan objects, download up to K strong (with-signal, .h5) passes from
 distinct stations, and write each pass's epoch-matched candidate catalog. -> /scratch/eval/."""
-import json, os, urllib.request, urllib.error
+import json, os, time, urllib.request, urllib.error
 from datetime import datetime
 SC = "/private/tmp/claude-501/-Users-ryan-GitHub-satnogs-id/e9fc3766-e6dd-4352-9d46-489818e4c3a6/scratchpad"
 KEY = None
 for line in open('/Users/ryan/GitHub/satnogs-id/.env'):
     if line.startswith('satnogs_db_api_key='): KEY = line.strip().split('=',1)[1]
-def getj(url, auth=False):
+def getj(url, auth=False, tries=6):
     h = {'Accept':'application/json'}
     if auth: h['Authorization'] = f'Token {KEY}'
-    return json.load(urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=30))
+    for k in range(tries):
+        try:
+            r = json.load(urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=30))
+            time.sleep(0.4); return r
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and k < tries-1: time.sleep(8*(k+1)); continue
+            raise
 GEOSCANS = {64879:'Geoscan-6', 64880:'Geoscan-1', 64890:'Geoscan-2',
             64891:'Geoscan-5', 64892:'Geoscan-4', 64893:'Geoscan-3'}
 soup = list(range(64876, 64896))
 K = 12
 os.makedirs(SC+'/eval', exist_ok=True)
-cand_obs = {n: getj(f'https://network.satnogs.org/api/observations/?norad_cat_id={n}&format=json') for n in soup}
+_cache = SC+'/eval/cand_obs.json'
+if os.path.exists(_cache):
+    cand_obs = {int(k): v for k, v in json.load(open(_cache)).items()}
+else:
+    cand_obs = {n: getj(f'https://network.satnogs.org/api/observations/?norad_cat_id={n}&format=json') for n in soup}
+    json.dump({str(k): v for k, v in cand_obs.items()}, open(_cache, 'w'))
 downloaded = []
 import glob as _glob
 existing = {os.path.basename(p).split('_')[0][3:] for p in _glob.glob(SC+'/eval/*.h5')}
