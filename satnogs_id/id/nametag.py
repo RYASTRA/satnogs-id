@@ -55,3 +55,16 @@ def assess(messages: list[tuple[int, bool]], predicted_norad: int) -> NameTag:
            else f"only {total} messages" if total < 3
            else f"{dom_count} of {total} messages agree")
     return NameTag(dominant, "MEDIUM", True, why)
+
+
+def resolve_messages(frames: list[dict], callsign_map: dict[str, int]) -> list[tuple[int, bool]]:
+    """Turn raw telemetry frames into (resolved_norad, flagged_shared). Frames whose callsign doesn't
+    parse or isn't in the cluster's callsign map are dropped."""
+    out: list[tuple[int, bool]] = []
+    for fr in frames:
+        callsign = parse_callsign(fr.get("frame") or "")
+        norad = callsign_map.get(callsign) if callsign else None
+        if norad is None:
+            continue
+        out.append((norad, bool(fr.get("associated_satellites"))))
+    return out
