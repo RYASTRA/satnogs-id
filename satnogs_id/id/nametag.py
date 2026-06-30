@@ -76,6 +76,7 @@ def format_name_tag(nt: "NameTag | None", names: dict[int, str]) -> str:
         return ""
     if nt.tier == "NONE":
         return "Name tag:  —  ·  none  — " + nt.reason
+    assert nt.norad is not None  # non-NONE tiers always carry a resolved NORAD
     label = names.get(nt.norad, str(nt.norad))
     if nt.tier == "DISAGREES":
         return f"Name tag:  {label}  ·  ⚠ disagrees  — {nt.reason}"
