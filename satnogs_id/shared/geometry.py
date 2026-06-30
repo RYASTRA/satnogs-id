@@ -51,6 +51,7 @@ def range_rate_km_s(
     pos = (sat - station).at(_TS.from_datetimes(times))
     r = pos.position.km
     v = pos.velocity.km_per_s
+    assert isinstance(r, np.ndarray) and isinstance(v, np.ndarray)
     return np.sum(r * v, axis=0) / np.linalg.norm(r, axis=0)
 
 

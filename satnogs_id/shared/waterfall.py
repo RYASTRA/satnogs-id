@@ -28,15 +28,31 @@ class Waterfall:
     db: np.ndarray  # (T, F) power in dB, per-bin normalised
 
 
+def _str_attr(obj: h5py.Group, key: str) -> str:
+    """Read an HDF5 string attribute (h5py returns it as str or bytes) as a str."""
+    v = obj.attrs[key]
+    if isinstance(v, bytes):
+        return v.decode()
+    assert isinstance(v, str), f"attribute {key!r} is not a string"
+    return v
+
+
+def _array(group: h5py.Group, key: str) -> np.ndarray:
+    """Read an HDF5 dataset under `group` as a numpy array (h5py's __getitem__ is loosely typed)."""
+    ds = group[key]
+    assert isinstance(ds, h5py.Dataset), f"{key!r} is not an HDF5 dataset"
+    return ds[:]
+
+
 def load_waterfall(h5path: str | Path) -> Waterfall:
     with h5py.File(h5path, "r") as f:
-        m = json.loads(f.attrs["metadata"])
+        m = json.loads(_str_attr(f, "metadata"))
         wf = f["waterfall"]
-        st = wf.attrs["start_time"]
-        st = st.decode() if isinstance(st, bytes) else st
-        data = wf["data"][:].astype(np.float32)
-        scale = wf["scale"][:].astype(np.float32)
-        offset = wf["offset"][:].astype(np.float32)
+        assert isinstance(wf, h5py.Group), "waterfall group missing from .h5"
+        st = _str_attr(wf, "start_time")
+        data = _array(wf, "data").astype(np.float32)
+        scale = _array(wf, "scale").astype(np.float32)
+        offset = _array(wf, "offset").astype(np.float32)
         loc = m["location"]
         return Waterfall(
             f0_hz=float(m["frequency"]),
@@ -45,8 +61,8 @@ def load_waterfall(h5path: str | Path) -> Waterfall:
             alt_m=float(loc["altitude"]),
             tle=m["tle"].strip().splitlines(),
             start=datetime.fromisoformat(st.replace("Z", "+00:00")),
-            relative_time_s=wf["relative_time"][:].astype(float),
-            freqax_hz=wf["frequency"][:].astype(float),
+            relative_time_s=_array(wf, "relative_time").astype(float),
+            freqax_hz=_array(wf, "frequency").astype(float),
             db=data * scale[None, :] + offset[None, :],
         )
 

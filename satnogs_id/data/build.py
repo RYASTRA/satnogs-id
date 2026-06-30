@@ -96,7 +96,7 @@ def harvest(
                 break
             oid, station, tdate = o["id"], o.get("ground_station"), o["start"][:10]
             url = client.h5_url(oid)
-            if not url:
+            if not url or station is None:
                 continue
             h5rel = f"h5/obs{oid}_n{norad}_st{station}.h5"
             client.download(url, ds.root / h5rel)

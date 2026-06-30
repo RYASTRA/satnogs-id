@@ -92,10 +92,7 @@ def main() -> None:
             )
             print(f"uploaded dataset card from {card}")
         if args.public:
-            try:
-                api.update_repo_settings(REPO_ID, repo_type="dataset", private=False)
-            except (AttributeError, TypeError):
-                api.update_repo_visibility(REPO_ID, repo_type="dataset", private=False)
+            api.update_repo_settings(REPO_ID, repo_type="dataset", private=False)
             print("set dataset visibility: public")
     else:
         print("(not pushed -- re-run with --push once a HF token is set)")
