@@ -1,6 +1,7 @@
 """Polite SatNOGS + CelesTrak API client: on-disk response caching, a minimum inter-request
 interval, exponential backoff on HTTP 429, and Link-header pagination for the Network observations
 endpoint. This is what lets us harvest a real eval set without tripping the rate limiter."""
+
 from __future__ import annotations
 import json
 import time
@@ -22,8 +23,13 @@ class SatnogsClient:
     DB = "https://db.satnogs.org/api"
     CELESTRAK_GP = "https://celestrak.org/NORAD/elements/gp.php"
 
-    def __init__(self, cache_dir: str | Path | None = None, min_interval: float = 0.4,
-                 max_retries: int = 6, backoff: float = 8.0) -> None:
+    def __init__(
+        self,
+        cache_dir: str | Path | None = None,
+        min_interval: float = 0.4,
+        max_retries: int = 6,
+        backoff: float = 8.0,
+    ) -> None:
         self.cache = Path(cache_dir or settings.cache_dir)
         self.cache.mkdir(parents=True, exist_ok=True)
         self.min_interval = min_interval
@@ -32,7 +38,9 @@ class SatnogsClient:
         self._last = 0.0
 
     # ---- low-level GET with cache + rate-limit handling ----
-    def _raw(self, url: str, auth: bool, accept: str = "application/json") -> tuple[bytes, Any]:
+    def _raw(
+        self, url: str, auth: bool, accept: str = "application/json"
+    ) -> tuple[bytes, Any]:
         headers = {"Accept": accept}
         if auth:
             headers["Authorization"] = f"Token {settings.db_key}"
@@ -41,7 +49,9 @@ class SatnogsClient:
             if wait > 0:
                 time.sleep(wait)
             try:
-                resp = urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30)
+                resp = urllib.request.urlopen(
+                    urllib.request.Request(url, headers=headers), timeout=30
+                )
                 self._last = time.monotonic()
                 return resp.read(), resp.headers
             except urllib.error.HTTPError as e:
@@ -73,8 +83,14 @@ class SatnogsClient:
         return None
 
     # ---- SatNOGS Network (public reads) ----
-    def observations(self, *, norad: int | None = None, sat_id: str | None = None,
-                     max_pages: int = 1, **filters: Any) -> list[dict]:
+    def observations(
+        self,
+        *,
+        norad: int | None = None,
+        sat_id: str | None = None,
+        max_pages: int = 1,
+        **filters: Any,
+    ) -> list[dict]:
         """Observations for a satellite, following Link-header pagination up to max_pages.
         Note: the working filter is `norad_cat_id` (not `satellite__norad_cat_id`)."""
         params = {"format": "json"}
@@ -83,7 +99,9 @@ class SatnogsClient:
         if sat_id is not None:
             params["sat_id"] = sat_id
         params.update({k: str(v) for k, v in filters.items()})
-        url = f"{self.NETWORK}/observations/?" + "&".join(f"{k}={v}" for k, v in params.items())
+        url = f"{self.NETWORK}/observations/?" + "&".join(
+            f"{k}={v}" for k, v in params.items()
+        )
         out: list[dict] = []
         for _ in range(max_pages):
             key = self.cache / (hashlib.sha1(url.encode()).hexdigest() + ".page.json")
@@ -105,7 +123,10 @@ class SatnogsClient:
 
     # ---- SatNOGS DB (artifacts are authenticated) ----
     def artifacts(self, network_obs_id: int | str) -> list[dict]:
-        r = self.get_json(f"{self.DB}/artifacts/?network_obs_id={network_obs_id}&format=json", auth=True)
+        r = self.get_json(
+            f"{self.DB}/artifacts/?network_obs_id={network_obs_id}&format=json",
+            auth=True,
+        )
         return r if isinstance(r, list) else r.get("results", [])
 
     def telemetry(self, observation_id: int | str) -> list[dict]:
@@ -142,7 +163,8 @@ class SatnogsClient:
         # Guard: keep only frames whose observation_id matches (or is unset/null).
         str_id = str(observation_id)
         return [
-            f for f in out
+            f
+            for f in out
             if f.get("observation_id") is None or str(f.get("observation_id")) == str_id
         ]
 
@@ -158,23 +180,34 @@ class SatnogsClient:
         try:
             urllib.request.urlretrieve(url, dest)
         except urllib.error.HTTPError:
-            req = urllib.request.Request(url, headers={"Authorization": f"Token {settings.db_key}"})
+            req = urllib.request.Request(
+                url, headers={"Authorization": f"Token {settings.db_key}"}
+            )
             dest.write_bytes(urllib.request.urlopen(req, timeout=120).read())
         return dest
 
     # ---- CelesTrak GP (public) ----
     def celestrak_gp_tle(self, intdes: str) -> list[tuple[str, str, str]]:
         """3LE rows for a launch's international designator (e.g. '2025-155'), via CelesTrak current GP."""
-        body, _ = self._raw(f"{self.CELESTRAK_GP}?INTDES={intdes}&FORMAT=tle", auth=False, accept="text/plain")
+        body, _ = self._raw(
+            f"{self.CELESTRAK_GP}?INTDES={intdes}&FORMAT=tle",
+            auth=False,
+            accept="text/plain",
+        )
         lines = [ln.rstrip() for ln in body.decode().splitlines() if ln.strip()]
-        return [(lines[i], lines[i + 1], lines[i + 2]) for i in range(0, len(lines) - 2, 3)]
+        return [
+            (lines[i], lines[i + 1], lines[i + 2]) for i in range(0, len(lines) - 2, 3)
+        ]
 
 
-def nearest_tle(observations: Iterable[dict], target_date: str) -> tuple[str, str, str] | None:
+def nearest_tle(
+    observations: Iterable[dict], target_date: str
+) -> tuple[str, str, str] | None:
     """Pick the per-obs TLE (tle0/1/2) whose observation date is closest to target_date (YYYY-MM-DD)."""
     from datetime import date
+
     td = date.fromisoformat(target_date[:10])
-    best, best_dd = None, 10 ** 9
+    best, best_dd = None, 10**9
     for o in observations:
         if not o.get("tle1"):
             continue

@@ -1,6 +1,7 @@
 """Honest identification metrics over a Dataset: top-1 accuracy with a Wilson 95% CI, the
 true-object rank distribution, the margin-over-best-confuser distribution, and a per-object
 breakdown. Run in-container: docker compose run --rm app python -m satnogs_id.id.eval <dataset_dir>."""
+
 from __future__ import annotations
 import math
 import tempfile
@@ -32,7 +33,9 @@ class EvalResult:
     unusable: int = 0
     ranks: list[int] = field(default_factory=list)
     margins_kHz: list[float] = field(default_factory=list)
-    per_object: dict[int, tuple[int, int]] = field(default_factory=dict)  # norad -> (correct, total)
+    per_object: dict[int, tuple[int, int]] = field(
+        default_factory=dict
+    )  # norad -> (correct, total)
 
     @property
     def top1(self) -> float:
@@ -50,13 +53,20 @@ class EvalResult:
             f"({self.n_scored} scored, {self.unusable} unusable) ===",
             f"TOP-1 ACCURACY: {self.n_correct}/{self.n_scored} = {100 * self.top1:.1f}%  "
             f"(95% Wilson CI {100 * lo:.0f}-{100 * hi:.0f}%)",
-            "rank of true object: " + (", ".join(
-                f"rank{r}:{self.ranks.count(r)}" for r in sorted(set(self.ranks))) or "n/a"),
+            "rank of true object: "
+            + (
+                ", ".join(
+                    f"rank{r}:{self.ranks.count(r)}" for r in sorted(set(self.ranks))
+                )
+                or "n/a"
+            ),
         ]
         if self.margins_kHz:
             a = sorted(self.margins_kHz)
-            lines.append(f"margin over best confuser (correct): median {a[len(a) // 2]:.2f} kHz, "
-                         f"min {a[0]:.2f}, max {a[-1]:.2f}")
+            lines.append(
+                f"margin over best confuser (correct): median {a[len(a) // 2]:.2f} kHz, "
+                f"min {a[0]:.2f}, max {a[-1]:.2f}"
+            )
         lines.append("per-object top-1:")
         for n in sorted(self.per_object):
             c, t = self.per_object[n]
@@ -64,8 +74,12 @@ class EvalResult:
         return "\n".join(lines)
 
 
-def evaluate(ds: Dataset, base_site: int = 9001,
-             sites_txt: str = "/opt/strf/data/sites.txt", min_points: int = 10) -> EvalResult:
+def evaluate(
+    ds: Dataset,
+    base_site: int = 9001,
+    sites_txt: str = "/opt/strf/data/sites.txt",
+    min_points: int = 10,
+) -> EvalResult:
     res = EvalResult()
     for k, r in enumerate(ds.records):
         wf = load_waterfall(ds.h5_path(r))
@@ -96,7 +110,10 @@ def evaluate(ds: Dataset, base_site: int = 9001,
 
 def _main() -> None:
     import argparse
-    ap = argparse.ArgumentParser(description="Evaluate identification accuracy over a dataset.")
+
+    ap = argparse.ArgumentParser(
+        description="Evaluate identification accuracy over a dataset."
+    )
     ap.add_argument("dataset")
     args = ap.parse_args()
     ds = Dataset.load(args.dataset)

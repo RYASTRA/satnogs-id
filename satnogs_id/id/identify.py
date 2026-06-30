@@ -1,5 +1,6 @@
 """Run rffit's headless identify (`-I`, our minimal patch) and parse the ranking. We do NOT
 reimplement any estimation -- rffit's own identify_satellite_from_doppler does the matching."""
+
 from __future__ import annotations
 import os
 import subprocess
@@ -9,8 +10,10 @@ from pathlib import Path
 
 @dataclass
 class IdentifyResult:
-    predicted: int | None                          # best-fitting NORAD (lowest Doppler RMS), or None
-    ranking: list[tuple[float, int]] = field(default_factory=list)  # (rms_kHz, norad), ascending
+    predicted: int | None  # best-fitting NORAD (lowest Doppler RMS), or None
+    ranking: list[tuple[float, int]] = field(
+        default_factory=list
+    )  # (rms_kHz, norad), ascending
 
     def rank_of(self, norad: int) -> int | None:
         for i, (_rms, n) in enumerate(self.ranking):
@@ -28,12 +31,27 @@ class IdentifyResult:
         return None if (trms is None or conf is None) else conf - trms
 
 
-def run_rffit_identify(dat_path: str | Path, catalog_path: str | Path, site_id: int,
-                       rffit_bin: str = "/opt/strf/rffit", st_datadir: str = "/opt/strf"
-                       ) -> IdentifyResult:
+def run_rffit_identify(
+    dat_path: str | Path,
+    catalog_path: str | Path,
+    site_id: int,
+    rffit_bin: str = "/opt/strf/rffit",
+    st_datadir: str = "/opt/strf",
+) -> IdentifyResult:
     out = subprocess.run(
-        [rffit_bin, "-d", str(dat_path), "-c", str(catalog_path), "-s", str(site_id), "-I"],
-        capture_output=True, text=True, env={**os.environ, "ST_DATADIR": st_datadir},
+        [
+            rffit_bin,
+            "-d",
+            str(dat_path),
+            "-c",
+            str(catalog_path),
+            "-s",
+            str(site_id),
+            "-I",
+        ],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "ST_DATADIR": st_datadir},
     )
     ranking: list[tuple[float, int]] = []
     for line in out.stdout.splitlines():

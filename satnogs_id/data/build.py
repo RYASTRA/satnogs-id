@@ -5,6 +5,7 @@ N grows well beyond the 25-per-page recent window once the API cooldown clears.
 
 Run in-container: docker compose run --rm app python -m satnogs_id.data.build geoscan _eval/geoscan
 """
+
 from __future__ import annotations
 import argparse
 from pathlib import Path
@@ -17,28 +18,57 @@ from .dataset import Dataset, PassRecord
 CLUSTERS: dict[str, dict] = {
     "geoscan": {
         "soup": list(range(64876, 64896)),
-        "truth": {64879: "Geoscan-6", 64880: "Geoscan-1", 64890: "Geoscan-2",
-                  64891: "Geoscan-5", 64892: "Geoscan-4", 64893: "Geoscan-3"},
+        "truth": {
+            64879: "Geoscan-6",
+            64880: "Geoscan-1",
+            64890: "Geoscan-2",
+            64891: "Geoscan-5",
+            64892: "Geoscan-4",
+            64893: "Geoscan-3",
+        },
     },
     # Tevel-2: 9 near-identical Israeli cubesats, intl 2025-052, launched 2025-03-15.
     # Held-out generalisation cluster (different bus / band / geometry from Geoscan).
     "tevel2": {
         "soup": [63213, 63214, 63215, 63217, 63218, 63219, 63237, 63238, 63239],
-        "truth": {63217: "TEVEL2-1", 63219: "TEVEL2-2", 63218: "TEVEL2-3", 63213: "TEVEL2-4",
-                  63214: "TEVEL2-5", 63215: "TEVEL2-6", 63238: "TEVEL2-7", 63239: "TEVEL2-8",
-                  63237: "TEVEL2-9"},
+        "truth": {
+            63217: "TEVEL2-1",
+            63219: "TEVEL2-2",
+            63218: "TEVEL2-3",
+            63213: "TEVEL2-4",
+            63214: "TEVEL2-5",
+            63215: "TEVEL2-6",
+            63238: "TEVEL2-7",
+            63239: "TEVEL2-8",
+            63237: "TEVEL2-9",
+        },
         # Per-unit AX.25 source callsigns, verified from decoded frames (Task 3). Unit 1 (63217)
         # actually transmits "TLV2-1" (note the letter order vs the others); "TVL2-1" kept as a
         # harmless alias. The other units transmit "TVL2-<n>".
-        "callsigns": {"TLV2-1": 63217, "TVL2-1": 63217, "TVL2-2": 63219, "TVL2-3": 63218,
-                      "TVL2-4": 63213, "TVL2-5": 63214, "TVL2-6": 63215, "TVL2-7": 63238,
-                      "TVL2-8": 63239, "TVL2-9": 63237},
+        "callsigns": {
+            "TLV2-1": 63217,
+            "TVL2-1": 63217,
+            "TVL2-2": 63219,
+            "TVL2-3": 63218,
+            "TVL2-4": 63213,
+            "TVL2-5": 63214,
+            "TVL2-6": 63215,
+            "TVL2-7": 63238,
+            "TVL2-8": 63239,
+            "TVL2-9": 63237,
+        },
     },
 }
 
 
-def harvest(cluster: str, out_dir: str, k: int = 12, min_alt: float = 25.0,
-            max_pages: int = 3, client: SatnogsClient | None = None) -> Dataset:
+def harvest(
+    cluster: str,
+    out_dir: str,
+    k: int = 12,
+    min_alt: float = 25.0,
+    max_pages: int = 3,
+    client: SatnogsClient | None = None,
+) -> Dataset:
     cfg = CLUSTERS[cluster]
     client = client if client is not None else SatnogsClient()
     ds = Dataset(root=Path(out_dir), records=[])
@@ -46,13 +76,20 @@ def harvest(cluster: str, out_dir: str, k: int = 12, min_alt: float = 25.0,
     (ds.root / "catalogs").mkdir(parents=True, exist_ok=True)
 
     # One paginated fetch per candidate; the polite client caches each, so re-runs cost no requests.
-    cand_obs = {n: client.observations(norad=n, max_pages=max_pages) for n in cfg["soup"]}
+    cand_obs = {
+        n: client.observations(norad=n, max_pages=max_pages) for n in cfg["soup"]
+    }
 
     for norad, name in cfg["truth"].items():
         strong = sorted(
-            (o for o in cand_obs[norad]
-             if o.get("waterfall_status") == "with-signal" and (o.get("max_altitude") or 0) >= min_alt),
-            key=lambda o: -(o.get("max_altitude") or 0))
+            (
+                o
+                for o in cand_obs[norad]
+                if o.get("waterfall_status") == "with-signal"
+                and (o.get("max_altitude") or 0) >= min_alt
+            ),
+            key=lambda o: -(o.get("max_altitude") or 0),
+        )
         got = 0
         for o in strong:
             if got >= k:
@@ -69,7 +106,9 @@ def harvest(cluster: str, out_dir: str, k: int = 12, min_alt: float = 25.0,
                     t = nearest_tle(cand_obs[n], tdate)
                     if t:
                         g.write(f"{t[0]}\n{t[1]}\n{t[2]}\n")
-            ds.records.append(PassRecord(oid, norad, int(station), h5rel, catrel, tdate))
+            ds.records.append(
+                PassRecord(oid, norad, int(station), h5rel, catrel, tdate)
+            )
             got += 1
         print(f"{name} ({norad}): {got} passes")
 
@@ -79,14 +118,32 @@ def harvest(cluster: str, out_dir: str, k: int = 12, min_alt: float = 25.0,
 
 
 def _main() -> None:
-    ap = argparse.ArgumentParser(description="Harvest an id eval dataset for a known cluster.")
+    ap = argparse.ArgumentParser(
+        description="Harvest an id eval dataset for a known cluster."
+    )
     ap.add_argument("cluster", choices=sorted(CLUSTERS))
     ap.add_argument("out_dir")
     ap.add_argument("-k", type=int, default=12, help="max passes per object")
-    ap.add_argument("--min-alt", type=float, default=25.0, help="min max-altitude (deg) for a strong pass")
-    ap.add_argument("--max-pages", type=int, default=3, help="observation pages to paginate per object")
+    ap.add_argument(
+        "--min-alt",
+        type=float,
+        default=25.0,
+        help="min max-altitude (deg) for a strong pass",
+    )
+    ap.add_argument(
+        "--max-pages",
+        type=int,
+        default=3,
+        help="observation pages to paginate per object",
+    )
     args = ap.parse_args()
-    harvest(args.cluster, args.out_dir, k=args.k, min_alt=args.min_alt, max_pages=args.max_pages)
+    harvest(
+        args.cluster,
+        args.out_dir,
+        k=args.k,
+        min_alt=args.min_alt,
+        max_pages=args.max_pages,
+    )
 
 
 if __name__ == "__main__":

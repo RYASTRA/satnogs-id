@@ -10,6 +10,7 @@ external catalog, so the answer is not tautological.)
 Run in-container:
     docker compose run --rm app python -m satnogs_id.service.forward <obs_id> --intdes 2025-155
 """
+
 from __future__ import annotations
 import argparse
 import tempfile
@@ -52,32 +53,53 @@ class ForwardID:
         if self.best is None:
             return f"obs {self.obs_id}: no identification (no usable track or empty catalog)"
         m = self.margin_kHz
-        flag = "  [AMBIGUOUS -- margin below threshold; needs another pass]" if self.ambiguous else ""
+        flag = (
+            "  [AMBIGUOUS -- margin below threshold; needs another pass]"
+            if self.ambiguous
+            else ""
+        )
         lines = [
             f"obs {self.obs_id}: most likely NORAD {self.best}"
             f"  (best RMS {self.result.ranking[0][0]:.3f} kHz"
-            + (f", margin {m:.3f} kHz over runner-up" if m is not None else "") + ")" + flag,
+            + (f", margin {m:.3f} kHz over runner-up" if m is not None else "")
+            + ")"
+            + flag,
             f"  {self.n_points} Doppler points; top candidates:",
         ]
         for rms, norad in self.result.ranking[:5]:
             lines.append(f"    {norad}: {rms:.3f} kHz")
-        if self.ambiguous and self.epoch_gap_days is not None and self.epoch_gap_days > 60:
-            lines.append(f"  note: candidate elements sit ~{self.epoch_gap_days:.0f} d from the "
-                         "observation epoch -- likely too stale; current TLEs suit recent passes.")
+        if (
+            self.ambiguous
+            and self.epoch_gap_days is not None
+            and self.epoch_gap_days > 60
+        ):
+            lines.append(
+                f"  note: candidate elements sit ~{self.epoch_gap_days:.0f} d from the "
+                "observation epoch -- likely too stale; current TLEs suit recent passes."
+            )
         if self.name_tag is not None:
             from ..data.build import CLUSTERS
-            names = next((c["truth"] for c in CLUSTERS.values() if self.best in c["truth"]), {})
+
+            names = next(
+                (c["truth"] for c in CLUSTERS.values() if self.best in c["truth"]), {}
+            )
             badge = format_name_tag(self.name_tag, names, predicted=self.best)
             if badge:
                 lines.append("  " + badge)
         return "\n".join(lines)
 
 
-def identify_observation(obs_id: int, *, intdes: str | None = None, catalog: str | Path | None = None,
-                         site_id: int = 9001, ambiguous_kHz: float = 0.5,
-                         sites_txt: str = "/opt/strf/data/sites.txt",
-                         work_dir: str | Path | None = None,
-                         client: SatnogsClient | None = None) -> ForwardID:
+def identify_observation(
+    obs_id: int,
+    *,
+    intdes: str | None = None,
+    catalog: str | Path | None = None,
+    site_id: int = 9001,
+    ambiguous_kHz: float = 0.5,
+    sites_txt: str = "/opt/strf/data/sites.txt",
+    work_dir: str | Path | None = None,
+    client: SatnogsClient | None = None,
+) -> ForwardID:
     """Identify obs_id against a candidate catalog. Candidates come from an explicit `catalog` file,
     or live CelesTrak GP for `intdes`, or -- if neither is given -- the launch derived from the
     observation's own elements (auto)."""
@@ -106,35 +128,58 @@ def identify_observation(obs_id: int, *, intdes: str | None = None, catalog: str
     name_tag = None
     if result.predicted is not None:
         from ..data.build import CLUSTERS
-        cmap = next((c["callsigns"] for c in CLUSTERS.values()
-                     if "callsigns" in c and result.predicted in c["truth"]), None)
+
+        cmap = next(
+            (
+                c["callsigns"]
+                for c in CLUSTERS.values()
+                if "callsigns" in c and result.predicted in c["truth"]
+            ),
+            None,
+        )
         if cmap:
             try:
-                name_tag = assess(resolve_messages(client.telemetry(obs_id), cmap), result.predicted)
+                name_tag = assess(
+                    resolve_messages(client.telemetry(obs_id), cmap), result.predicted
+                )
             except Exception:
                 name_tag = None  # supplemental: a telemetry hiccup must not break the Doppler answer
     return ForwardID(obs_id, n, result, ambiguous_kHz, gap, name_tag=name_tag)
 
 
 def _median_epoch_gap_days(catalog: str | Path, obs_start) -> float | None:
-    line1s = [ln for ln in Path(catalog).read_text().splitlines() if ln.startswith("1 ")]
+    line1s = [
+        ln for ln in Path(catalog).read_text().splitlines() if ln.startswith("1 ")
+    ]
     if not line1s:
         return None
-    gaps = sorted(abs((tle_epoch(ln) - obs_start).total_seconds()) / 86400.0 for ln in line1s)
+    gaps = sorted(
+        abs((tle_epoch(ln) - obs_start).total_seconds()) / 86400.0 for ln in line1s
+    )
     return gaps[len(gaps) // 2]
 
 
 def _main() -> None:
-    ap = argparse.ArgumentParser(description="Forward identification of a SatNOGS observation.")
+    ap = argparse.ArgumentParser(
+        description="Forward identification of a SatNOGS observation."
+    )
     ap.add_argument("obs_id", type=int)
     src = ap.add_mutually_exclusive_group(required=False)
-    src.add_argument("--intdes", help="launch designator for live CelesTrak candidates (default: auto from the obs)")
+    src.add_argument(
+        "--intdes",
+        help="launch designator for live CelesTrak candidates (default: auto from the obs)",
+    )
     src.add_argument("--catalog", help="explicit candidate catalog .tle file")
     ap.add_argument("--site", type=int, default=9001)
     ap.add_argument("--ambiguous-kHz", type=float, default=0.5)
     args = ap.parse_args()
-    out = identify_observation(args.obs_id, intdes=args.intdes, catalog=args.catalog,
-                               site_id=args.site, ambiguous_kHz=args.ambiguous_kHz)
+    out = identify_observation(
+        args.obs_id,
+        intdes=args.intdes,
+        catalog=args.catalog,
+        site_id=args.site,
+        ambiguous_kHz=args.ambiguous_kHz,
+    )
     print(out.summary())
 
 

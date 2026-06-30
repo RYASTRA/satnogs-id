@@ -4,6 +4,7 @@ The `.h5` (artifact v2) is self-contained: a (time x frequency) waterfall, times
 frequency axis, the per-obs TLE used for Doppler correction, and the station location. The signal
 in a corrected waterfall is a near-vertical line; `extract_track` pulls it out with a carrier-locked
 search window, parabolic sub-bin peak interpolation, and iterative MAD outlier rejection."""
+
 from __future__ import annotations
 import json
 from dataclasses import dataclass
@@ -20,11 +21,11 @@ class Waterfall:
     lat: float
     lon: float
     alt_m: float
-    tle: list[str]              # [name, line1, line2] used for the applied Doppler correction
+    tle: list[str]  # [name, line1, line2] used for the applied Doppler correction
     start: datetime
     relative_time_s: np.ndarray
-    freqax_hz: np.ndarray       # offset from f0 (Hz)
-    db: np.ndarray              # (T, F) power in dB, per-bin normalised
+    freqax_hz: np.ndarray  # offset from f0 (Hz)
+    db: np.ndarray  # (T, F) power in dB, per-bin normalised
 
 
 def load_waterfall(h5path: str | Path) -> Waterfall:
@@ -39,7 +40,9 @@ def load_waterfall(h5path: str | Path) -> Waterfall:
         loc = m["location"]
         return Waterfall(
             f0_hz=float(m["frequency"]),
-            lat=float(loc["latitude"]), lon=float(loc["longitude"]), alt_m=float(loc["altitude"]),
+            lat=float(loc["latitude"]),
+            lon=float(loc["longitude"]),
+            alt_m=float(loc["altitude"]),
             tle=m["tle"].strip().splitlines(),
             start=datetime.fromisoformat(st.replace("Z", "+00:00")),
             relative_time_s=wf["relative_time"][:].astype(float),
@@ -48,9 +51,14 @@ def load_waterfall(h5path: str | Path) -> Waterfall:
         )
 
 
-def extract_track(wf: Waterfall, snr_pct: float = 80.0, win_hz: float = 4000.0,
-                  mad_k: float = 4.0, mad_iters: int = 3, min_points: int = 10
-                  ) -> tuple[np.ndarray, np.ndarray]:
+def extract_track(
+    wf: Waterfall,
+    snr_pct: float = 80.0,
+    win_hz: float = 4000.0,
+    mad_k: float = 4.0,
+    mad_iters: int = 3,
+    min_points: int = 10,
+) -> tuple[np.ndarray, np.ndarray]:
     """Return (relative_time_s, freq_offset_hz) of the near-vertical signal track, or empty arrays."""
     db = wf.db
     freqax = wf.freqax_hz
@@ -64,7 +72,9 @@ def extract_track(wf: Waterfall, snr_pct: float = 80.0, win_hz: float = 4000.0,
     if len(hi) < min_points:
         return np.array([]), np.array([])
 
-    cbin = int(np.argmax(db[hi].mean(axis=0)))           # carrier from integrated high-SNR spectrum
+    cbin = int(
+        np.argmax(db[hi].mean(axis=0))
+    )  # carrier from integrated high-SNR spectrum
     win = max(3, int(win_hz / dfbin))
     t_pts: list[float] = []
     f_pts: list[float] = []

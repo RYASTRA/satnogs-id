@@ -9,6 +9,7 @@ the physical received frequency for rffit we add the correction back:
 
 (exactly as strf's satnogs_waterfall_tabulation_helper.py does). This is independent of which TLE
 was used to correct, so it is non-circular -- it recovers the actual received Doppler curve."""
+
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
@@ -41,8 +42,9 @@ def intdes_from_tle1(line1: str) -> str:
     return f"{year}-{num:03d}"
 
 
-def range_rate_km_s(tle1: str, tle2: str, lat: float, lon: float, alt_m: float,
-                    times: list[datetime]) -> np.ndarray:
+def range_rate_km_s(
+    tle1: str, tle2: str, lat: float, lon: float, alt_m: float, times: list[datetime]
+) -> np.ndarray:
     """Topocentric range rate (km/s; positive = receding) of a satellite from a ground station."""
     sat = EarthSatellite(tle1, tle2, "sat", _TS)
     station = wgs84.latlon(lat, lon, elevation_m=alt_m)
@@ -57,7 +59,9 @@ def doppler_offset_hz(f0_hz: float, range_rate: np.ndarray) -> np.ndarray:
     return -f0_hz * range_rate / C_KM_S
 
 
-def uncorrect(f0_hz: float, offset_hz: np.ndarray, range_rate: np.ndarray) -> np.ndarray:
+def uncorrect(
+    f0_hz: float, offset_hz: np.ndarray, range_rate: np.ndarray
+) -> np.ndarray:
     """Recover physical received frequency from a Doppler-corrected waterfall offset."""
     return f0_hz + offset_hz - f0_hz * range_rate / C_KM_S
 

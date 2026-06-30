@@ -1,6 +1,7 @@
 """The id eval dataset contract: a directory with a `manifest.json` listing pass records, each
 pinning one observation to its truth NORAD, ground station, artifact `.h5`, and the epoch-matched
 candidate catalog. The harvester (data.build) writes it; the eval harness (id.eval) reads it."""
+
 from __future__ import annotations
 import json
 import re
@@ -13,11 +14,13 @@ _NAME_RE = re.compile(r"obs(\d+)_n(\d+)_st(\d+)")
 @dataclass
 class PassRecord:
     obs_id: int
-    norad: int        # truth: the SatNOGS-assigned catalog object for this observation
+    norad: int  # truth: the SatNOGS-assigned catalog object for this observation
     station: int
-    h5: str           # path relative to the dataset root
-    catalog: str      # path relative to the dataset root (3LE candidate soup)
-    start: str = ""   # YYYY-MM-DD (used for epoch matching at harvest time; unused at eval time)
+    h5: str  # path relative to the dataset root
+    catalog: str  # path relative to the dataset root (3LE candidate soup)
+    start: str = (
+        ""  # YYYY-MM-DD (used for epoch matching at harvest time; unused at eval time)
+    )
 
 
 @dataclass
@@ -34,7 +37,9 @@ class Dataset:
     @classmethod
     def load(cls, root: str | Path) -> "Dataset":
         root = Path(root)
-        recs = [PassRecord(**d) for d in json.loads((root / "manifest.json").read_text())]
+        recs = [
+            PassRecord(**d) for d in json.loads((root / "manifest.json").read_text())
+        ]
         return cls(root, recs)
 
     def h5_path(self, r: PassRecord) -> Path:
@@ -57,8 +62,13 @@ def manifest_from_dir(root: str | Path) -> Dataset:
         cats = list(root.rglob(f"soup_{oid}.tle"))
         if not cats:
             continue
-        records.append(PassRecord(
-            obs_id=oid, norad=norad, station=station,
-            h5=str(h5.relative_to(root)), catalog=str(cats[0].relative_to(root)),
-        ))
+        records.append(
+            PassRecord(
+                obs_id=oid,
+                norad=norad,
+                station=station,
+                h5=str(h5.relative_to(root)),
+                catalog=str(cats[0].relative_to(root)),
+            )
+        )
     return Dataset(root, records)

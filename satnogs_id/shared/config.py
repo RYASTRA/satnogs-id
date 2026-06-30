@@ -1,5 +1,6 @@
 """Configuration + credentials. Reads the repo `.env` (gitignored) then the process environment.
 Never logs or commits secrets."""
+
 from __future__ import annotations
 import os
 from dataclasses import dataclass
@@ -20,9 +21,11 @@ def _load_env_file(path: str | Path) -> dict[str, str]:
 
 @dataclass(frozen=True)
 class Settings:
-    db_key: str = ""           # SatNOGS DB API token (artifacts are auth-walled)
-    network_key: str = ""      # SatNOGS Network API token (reads are public; kept for completeness)
-    hf_token: str = ""         # Hugging Face Hub token
+    db_key: str = ""  # SatNOGS DB API token (artifacts are auth-walled)
+    network_key: str = (
+        ""  # SatNOGS Network API token (reads are public; kept for completeness)
+    )
+    hf_token: str = ""  # Hugging Face Hub token
     cache_dir: str = ".cache/satnogs_api"
 
     @property

@@ -1,5 +1,6 @@
 """Build rffit inputs from a SatNOGS waterfall: the Doppler `.dat` (extract track -> un-correct ->
 MJD/received-freq/site rows), the candidate catalog (3LE), and the strf `sites.txt` site line."""
+
 from __future__ import annotations
 from datetime import timedelta
 from pathlib import Path
@@ -23,7 +24,9 @@ def extract_doppler(wf: Waterfall, **extract_kwargs) -> tuple[list[float], list[
     return [r[0] for r in rows], [r[1] for r in rows]
 
 
-def build_dat(wf: Waterfall, site_id: int, dat_path: str | Path, **extract_kwargs) -> int:
+def build_dat(
+    wf: Waterfall, site_id: int, dat_path: str | Path, **extract_kwargs
+) -> int:
     """Extract + un-correct the track and write an rffit `.dat`. Returns the number of points."""
     mjd, recv = extract_doppler(wf, **extract_kwargs)
     if not mjd:
