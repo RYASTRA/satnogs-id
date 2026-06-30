@@ -3,6 +3,9 @@ decoded frames and score it against the Doppler ID as a supplemental second opin
 See docs/superpowers/specs/2026-06-30-decoded-name-confidence-design.md."""
 from __future__ import annotations
 
+from collections import Counter
+from dataclasses import dataclass
+
 
 def parse_callsign(frame_hex: str) -> str | None:
     """The AX.25 source callsign (frame bytes 7-12, each ASCII shifted left one bit). None if the
@@ -17,3 +20,38 @@ def parse_callsign(frame_hex: str) -> str | None:
     if src and all(32 <= ord(ch) < 127 for ch in src):
         return src
     return None
+
+
+@dataclass
+class NameTag:
+    norad: int | None       # dominant resolved satellite (None when tier == "NONE")
+    tier: str               # HIGH | MEDIUM | LOW | DISAGREES | NONE
+    agrees: bool | None     # vs the Doppler ID; None when tier == "NONE"
+    reason: str             # one-line human explanation
+
+
+def assess(messages: list[tuple[int, bool]], predicted_norad: int) -> NameTag:
+    """Tier per the spec's evaluation order. `messages` = (resolved_norad, flagged_shared) each."""
+    if not messages:
+        return NameTag(None, "NONE", None, "no messages decoded for this observation")
+    norads = [n for n, _ in messages]
+    flagged = any(f for _, f in messages)
+    total = len(norads)
+    counts = Counter(norads)
+    dominant, dom_count = counts.most_common(1)[0]
+    share = dom_count / total
+    agrees = dominant == predicted_norad
+    if total == 1:
+        return NameTag(dominant, "LOW", agrees, "a single decoded message")
+    if share <= 0.5:
+        return NameTag(dominant, "LOW", agrees,
+                       f"no majority (messages split across {len(counts)} satellites)")
+    if not agrees:
+        return NameTag(dominant, "DISAGREES", False,
+                       f"majority disagrees with Doppler ({dom_count} of {total} messages)")
+    if total >= 3 and share >= 0.8 and not flagged:
+        return NameTag(dominant, "HIGH", True, f"heard in {dom_count} of {total} decoded messages")
+    why = ("flagged shared by SatNOGS" if flagged
+           else f"only {total} messages" if total < 3
+           else f"{dom_count} of {total} messages agree")
+    return NameTag(dominant, "MEDIUM", True, why)
