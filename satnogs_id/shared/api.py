@@ -108,6 +108,44 @@ class SatnogsClient:
         r = self.get_json(f"{self.DB}/artifacts/?network_obs_id={network_obs_id}&format=json", auth=True)
         return r if isinstance(r, list) else r.get("results", [])
 
+    def telemetry(self, observation_id: int | str) -> list[dict]:
+        """Decoded telemetry frames for one observation (cursor-paginated; cached + 429-backed-off
+        like every other call here).
+
+        The DB API does not support ?observation_id= as a standalone filter (returns HTTP 400).
+        Instead we look up the observation to get its NORAD ID and time window, then query
+        ?satellite=<norad>&start=<obs_start>&end=<obs_end>&format=json with auth.
+        All returned frames fall within the observation window and typically carry the
+        matching observation_id; a client-side guard filters any stragglers."""
+        # Resolve NORAD + time bounds from the Network observation record (cached).
+        obs = self.observation(observation_id)
+        norad = obs.get("norad_cat_id")
+        start = obs.get("start")
+        end = obs.get("end")
+        if not (norad and start and end):
+            return []
+        out: list[dict] = []
+        url = (
+            f"{self.DB}/telemetry/"
+            f"?satellite={norad}&start={start}&end={end}&format=json"
+        )
+        seen = 0
+        while url and seen < 20:  # cap pages; one observation never needs many
+            r = self.get_json(url, auth=True)
+            if isinstance(r, dict) and "results" in r:
+                out.extend(r["results"])
+                url = r.get("next")
+            else:
+                out.extend(r if isinstance(r, list) else [])
+                url = None
+            seen += 1
+        # Guard: keep only frames whose observation_id matches (or is unset/null).
+        str_id = str(observation_id)
+        return [
+            f for f in out
+            if f.get("observation_id") is None or str(f.get("observation_id")) == str_id
+        ]
+
     def h5_url(self, network_obs_id: int | str) -> str | None:
         for a in self.artifacts(network_obs_id):
             if a.get("artifact_file"):
