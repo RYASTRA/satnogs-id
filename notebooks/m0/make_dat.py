@@ -5,28 +5,19 @@ authoritative satnogs_waterfall_tabulation_helper.py recipe:
   3. write rffit's .dat (MJD, freq_recv, weight, site), the candidate catalog, and the site.
 Then rffit's identify ('i') matches the recovered Doppler curve against the catalog."""
 
-import h5py, json, numpy as np, os
-from datetime import datetime, timedelta, timezone
-from skyfield.api import load, wgs84, EarthSatellite
+import json, os, numpy as np
+from datetime import timedelta
 
-C = 299792.458
+from satnogs_id.shared import geometry
+from satnogs_id.shared.waterfall import load_waterfall
+
 SITE = 9001
-f = h5py.File("/data/good.h5", "r")
-m = json.loads(f.attrs["metadata"])
-f0 = float(m["frequency"])
-loc = m["location"]
-t0 = m["tle"].strip().splitlines()
-wf = f["waterfall"]
-data = wf["data"][:]
-freqax = wf["frequency"][:].astype(float)
-scale = wf["scale"][:].astype(float)
-offset = wf["offset"][:].astype(float)
-relt = wf["relative_time"][:].astype(float)
-_st = wf.attrs["start_time"]
-_st = _st.decode() if isinstance(_st, bytes) else _st
-start = datetime.fromisoformat(_st.replace("Z", "+00:00"))
-T, F = data.shape
-dB = data.astype(np.float32) * scale[None, :] + offset[None, :]
+wf = load_waterfall("/data/good.h5")
+f0 = wf.f0_hz
+freqax = wf.freqax_hz
+relt = wf.relative_time_s
+dB = wf.db
+T, F = dB.shape
 
 # 1. extract near-vertical signal track: per-row peak, keep high-SNR rows near the carrier column
 peak = np.argmax(dB, axis=1)
@@ -39,21 +30,13 @@ keep = hi & (np.abs(freqax[peak] - carrier) < 6000)
 idx = np.where(keep)[0]
 print(f"extracted {len(idx)}/{T} track points; carrier offset ~{carrier:.0f} Hz")
 
-# 2. un-correct with the obs TLE (skyfield), exactly per the helper
-ts = load.timescale(builtin=True)
-st = wgs84.latlon(loc["latitude"], loc["longitude"], elevation_m=loc["altitude"])
-sat = EarthSatellite(t0[1], t0[2], "x", ts)
-EPOCH = datetime(1858, 11, 17, tzinfo=timezone.utc)
-rows = []
-for i in idx:
-    dt = start + timedelta(seconds=float(relt[i]))
-    pos = (sat - st).at(ts.from_datetime(dt))
-    r = pos.position.km
-    v = pos.velocity.km_per_s
-    rr = float(np.sum(r * v) / np.linalg.norm(r))  # km/s, + = receding
-    freq_recv = f0 + float(freqax[peak[i]]) - f0 * rr / C  # un-correct
-    rows.append(((dt - EPOCH).total_seconds() / 86400.0, freq_recv))
-rows.sort()
+# 2. un-correct with the obs TLE via the shared geometry helpers, exactly per the recipe
+times = [wf.start + timedelta(seconds=float(relt[i])) for i in idx]
+rr = geometry.range_rate_km_s(
+    wf.tle[1], wf.tle[2], wf.station, times
+)  # km/s, + = receding
+recv = geometry.uncorrect(f0, freqax[peak[idx]], rr)
+rows = sorted((geometry.mjd(times[k]), float(recv[k])) for k in range(len(idx)))
 os.makedirs("/data/strf", exist_ok=True)
 with open("/data/strf/geoscan.dat", "w") as g:
     for mj, fr in rows:
@@ -70,8 +53,7 @@ with open("/data/strf/soup.tle", "w") as g:
     for n, d in soup.items():
         g.write(f"{d.get('tle0') or '0 OBJECT'}\n{d['tle1']}\n{d['tle2']}\n")
 print(f"wrote soup.tle: {len(soup)} candidates (true = 64890 / Geoscan-2)")
+st = wf.station
 with open("/opt/strf/data/sites.txt", "a") as g:
-    g.write(
-        f"{SITE} GS {loc['latitude']:.4f} {loc['longitude']:.4f} {int(loc['altitude'])} GeoscanStation\n"
-    )
-print(f"appended site {SITE} ({loc['latitude']},{loc['longitude']}) to sites.txt")
+    g.write(f"{SITE} GS {st.lat:.4f} {st.lon:.4f} {int(st.alt_m)} GeoscanStation\n")
+print(f"appended site {SITE} ({st.lat},{st.lon}) to sites.txt")

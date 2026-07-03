@@ -5,40 +5,28 @@ track_c(t)=df+(c_doppler-T0_doppler). Matched-filter that track against the stor
 waterfall. The TRUE object (c=T0=Geoscan-2) -> flat track -> best fit; near-identical
 siblings -> a sloped residual -> worse fit. Margin(true - best sibling) = separability."""
 
-import h5py, json, numpy as np
-from datetime import datetime, timedelta
-from skyfield.api import load, wgs84, EarthSatellite
+import json, numpy as np
+from datetime import timedelta
 
-C = 299792.458
-f = h5py.File("/data/good.h5", "r")
-m = json.loads(f.attrs["metadata"])
-f0 = float(m["frequency"])
-loc = m["location"]
-t0 = m["tle"].strip().splitlines()
-wf = f["waterfall"]
-data = wf["data"][:]
-freqax = wf["frequency"][:].astype(float)
-scale = wf["scale"][:].astype(float)
-offset = wf["offset"][:].astype(float)
-relt = wf["relative_time"][:].astype(float)
-_st = wf.attrs["start_time"]
-_st = _st.decode() if isinstance(_st, bytes) else _st
-start = datetime.fromisoformat(_st.replace("Z", "+00:00"))
-T, F = data.shape
-dB = data.astype(np.float32) * scale[None, :] + offset[None, :]
-ts = load.timescale(builtin=True)
-st = wgs84.latlon(loc["latitude"], loc["longitude"], elevation_m=loc["altitude"])
-tt = ts.from_datetimes([start + timedelta(seconds=float(r)) for r in relt])
+from satnogs_id.shared import geometry
+from satnogs_id.shared.waterfall import load_waterfall
+
+wf = load_waterfall("/data/good.h5")
+f0 = wf.f0_hz
+freqax = wf.freqax_hz
+relt = wf.relative_time_s
+dB = wf.db
+T, F = dB.shape
+times = [wf.start + timedelta(seconds=float(r)) for r in relt]
 
 
 def dopp(l1, l2):
-    pos = (EarthSatellite(l1, l2, "x", ts) - st).at(tt)
-    r = pos.position.km
-    v = pos.velocity.km_per_s
-    return -np.sum(r * v, axis=0) / np.linalg.norm(r, axis=0) / C * f0
+    """Predicted Doppler offset (Hz) over the pass for a candidate TLE."""
+    rr = geometry.range_rate_km_s(l1, l2, wf.station, times)
+    return geometry.doppler_offset_hz(f0, rr)
 
 
-T0 = dopp(t0[1], t0[2])  # correction TLE actually applied (Geoscan-2)
+T0 = dopp(wf.tle[1], wf.tle[2])  # correction TLE actually applied (Geoscan-2)
 soup = json.load(open("/data/soup_tles.json"))
 dfbin = float(freqax[1] - freqax[0])
 

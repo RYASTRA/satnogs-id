@@ -4,38 +4,33 @@ filter for a VERTICAL line (constant offset = corrected) vs the embedded-TLE DOP
 signal's shape. Also emits a high-contrast image."""
 
 import h5py, json, numpy as np
-from datetime import datetime, timedelta
-from skyfield.api import load, wgs84, EarthSatellite
+from datetime import timedelta
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-C = 299792.458
-f = h5py.File("/data/good.h5", "r")
-m = json.loads(f.attrs["metadata"])
-f0 = float(m["frequency"])
-loc = m["location"]
-tle = m["tle"].strip().splitlines()
-wf = f["waterfall"]
-data = wf["data"][:]
-freqax = wf["frequency"][:].astype(float)
-scale = wf["scale"][:].astype(float)
-offset = wf["offset"][:].astype(float)
-relt = wf["relative_time"][:].astype(float)
-start = datetime.fromisoformat(wf.attrs["start_time"].replace("Z", "+00:00"))
-T, F = data.shape
-dB = data.astype(np.float32) * scale[None, :] + offset[None, :]
+from satnogs_id.shared import geometry
+from satnogs_id.shared.waterfall import load_waterfall
+
+PATH = "/data/good.h5"
+with h5py.File(PATH, "r") as _h:
+    _meta = _h.attrs["metadata"]
+assert isinstance(_meta, (str, bytes, bytearray))
+obs_id = json.loads(_meta)["observation_id"]
+
+wf = load_waterfall(PATH)
+f0 = wf.f0_hz
+freqax = wf.freqax_hz
+relt = wf.relative_time_s
+dB = wf.db
+T, F = dB.shape
 dBb = dB - np.median(dB, axis=0, keepdims=True)
 
-ts = load.timescale(builtin=True)
-st = wgs84.latlon(loc["latitude"], loc["longitude"], elevation_m=loc["altitude"])
-tt = ts.from_datetimes([start + timedelta(seconds=float(r)) for r in relt])
-sat = EarthSatellite(tle[1], tle[2], tle[0], ts)
-pos = (sat - st).at(tt)
-r = pos.position.km
-v = pos.velocity.km_per_s
-pred = -np.sum(r * v, axis=0) / np.linalg.norm(r, axis=0) / C * f0
+times = [wf.start + timedelta(seconds=float(r)) for r in relt]
+pred = geometry.doppler_offset_hz(
+    f0, geometry.range_rate_km_s(wf.tle[1], wf.tle[2], wf.station, times)
+)
 
 
 def score(curve, mat, grid, win=3):
@@ -103,9 +98,7 @@ for a, (mat, title, ov) in zip(
     a.set_xlabel("offset from %.4f MHz (Hz)" % (f0 / 1e6))
     a.set_ylabel("time (s)")
     a.set_title(title)
-fig.suptitle(
-    "Geoscan-2 obs %d — correction diagnosis (%s)" % (m["observation_id"], verdict)
-)
+fig.suptitle("Geoscan-2 obs %d — correction diagnosis (%s)" % (obs_id, verdict))
 fig.tight_layout()
 fig.savefig("/data/diag.png", dpi=100)
 print("saved /data/diag.png")

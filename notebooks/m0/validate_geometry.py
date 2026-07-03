@@ -4,41 +4,40 @@ If they agree, the TEME->topocentric->range-rate geometry is trustworthy (the §
 non-negotiable gate) before any scoring. Runs in the python:3.14-slim container."""
 
 import h5py, json, numpy as np
-from datetime import datetime, timezone, timedelta
+from datetime import timedelta
 from skyfield.api import load, wgs84, EarthSatellite
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from satnogs_id.shared.waterfall import load_waterfall
+
 C_KM_S = 299792.458
 
-f = h5py.File("/data/sample.h5", "r")
-m = json.loads(f.attrs["metadata"])
-f0 = float(m["frequency"])  # Hz, nominal downlink
-loc = m["location"]
-tle = m["tle"].strip().splitlines()
-name, l1, l2 = tle[0].strip(), tle[1].strip(), tle[2].strip()
+PATH = "/data/sample.h5"
+with h5py.File(PATH, "r") as _h:
+    _meta = _h.attrs["metadata"]
+assert isinstance(_meta, (str, bytes, bytearray))
+obs_id = json.loads(_meta)["observation_id"]
 
-wf = f["waterfall"]
-data = wf["data"][:]  # (T, F) uint8
-freqax = wf["frequency"][:].astype(float)  # (F,)  offset from f0 (units TBD)
-scale = wf["scale"][:].astype(float)  # (F,)
-offset = wf["offset"][:].astype(float)  # (F,)
-relt = wf["relative_time"][:].astype(float)  # (T,) seconds since start
-start_dt = datetime.fromisoformat(wf.attrs["start_time"].replace("Z", "+00:00"))
-T, F = data.shape
+wf = load_waterfall(PATH)
+f0 = wf.f0_hz  # Hz, nominal downlink
+freqax = wf.freqax_hz  # (F,)  offset from f0 (units TBD)
+relt = wf.relative_time_s  # (T,) seconds since start
+name, l1, l2 = wf.tle[0].strip(), wf.tle[1].strip(), wf.tle[2].strip()
+start_dt = wf.start
+T, F = wf.db.shape
 print(
-    f"waterfall {data.shape}  freqax[{freqax.min():.0f}..{freqax.max():.0f}] step={freqax[1] - freqax[0]:.2f}"
+    f"waterfall {wf.db.shape}  freqax[{freqax.min():.0f}..{freqax.max():.0f}] step={freqax[1] - freqax[0]:.2f}"
 )
 print(f"start={start_dt.isoformat()}  reltime span={relt[-1] - relt[0]:.1f}s")
 
 # --- extract measured track: peak frequency bin per time row, dB-normalised per bin ---
-dB = data.astype(np.float32) * scale[None, :] + offset[None, :]
 # FIX 1 (structured noise): background subtraction. A fixed-frequency interference
 # line is constant in time -> subtract each bin's time-median to remove it; the
 # Doppler-sweeping satellite is NOT constant in any bin, so it survives.
-dB = dB - np.median(dB, axis=0, keepdims=True)
+dB = wf.db - np.median(wf.db, axis=0, keepdims=True)
 peak = np.argmax(dB, axis=1)
 peakp = dB[np.arange(T), peak]
 base = np.median(dB, axis=1)
@@ -53,12 +52,13 @@ print(
 # --- predicted Doppler from the embedded TLE (skyfield) ---
 ts = load.timescale(builtin=True)
 sat = EarthSatellite(l1, l2, name, ts)
-st = wgs84.latlon(loc["latitude"], loc["longitude"], elevation_m=loc["altitude"])
+st = wgs84.latlon(wf.station.lat, wf.station.lon, elevation_m=wf.station.alt_m)
 dts = [start_dt + timedelta(seconds=float(rt)) for rt in relt]
 tt = ts.from_datetimes(dts)
 pos = (sat - st).at(tt)
 r = pos.position.km  # (3, T) topocentric
 v = pos.velocity.km_per_s  # (3, T)
+assert isinstance(r, np.ndarray) and isinstance(v, np.ndarray)
 rng = np.linalg.norm(r, axis=0)
 rrate = np.sum(r * v, axis=0) / rng  # km/s radial (range rate)
 pred_off_hz = -rrate / C_KM_S * f0  # Doppler offset, Hz
@@ -79,9 +79,7 @@ for a, (scl, lab) in zip(ax, [(1.0, "freq axis as Hz"), (1000.0, "freq axis as k
     a.set_ylabel("offset from %.4f MHz (Hz)" % (f0 / 1e6))
     a.legend()
     a.grid(alpha=0.3)
-fig.suptitle(
-    f"Geoscan-1 / NORAD 64880 obs {m['observation_id']} — measured vs predicted Doppler"
-)
+fig.suptitle(f"Geoscan-1 / NORAD 64880 obs {obs_id} — measured vs predicted Doppler")
 fig.tight_layout()
 fig.savefig("/data/overlay.png", dpi=90)
 print("saved /data/overlay.png")

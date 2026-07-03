@@ -8,11 +8,10 @@ sharper, more prominent peak reveals the signal's shape. No conclusion is assert
 here -- the per-obs table is what we read."""
 
 import h5py, json, numpy as np, glob
-from datetime import datetime, timedelta
-from skyfield.api import load, wgs84, EarthSatellite
+from datetime import timedelta
 
-C = 299792.458
-ts = load.timescale(builtin=True)
+from satnogs_id.shared import geometry
+from satnogs_id.shared.waterfall import load_waterfall
 
 
 def topmean(x, frac=0.25):
@@ -20,31 +19,24 @@ def topmean(x, frac=0.25):
     return float(np.mean(np.sort(x)[-k:]))
 
 
+def observation_id(path):
+    """Read the SatNOGS observation id from an artifact's metadata attribute (typed)."""
+    with h5py.File(path, "r") as f:
+        meta = f.attrs["metadata"]
+    assert isinstance(meta, (str, bytes, bytearray))
+    return json.loads(meta)["observation_id"]
+
+
 def analyze(path):
-    f = h5py.File(path, "r")
-    m = json.loads(f.attrs["metadata"])
-    f0 = float(m["frequency"])
-    loc = m["location"]
-    tle = m["tle"].strip().splitlines()
-    wf = f["waterfall"]
-    data = wf["data"][:]
-    freqax = wf["frequency"][:].astype(float)
-    scale = wf["scale"][:].astype(float)
-    offset = wf["offset"][:].astype(float)
-    relt = wf["relative_time"][:].astype(float)
-    _st = wf.attrs["start_time"]
-    if isinstance(_st, bytes):
-        _st = _st.decode()
-    start = datetime.fromisoformat(_st.replace("Z", "+00:00"))
-    T, F = data.shape
-    dB = data.astype(np.float32) * scale[None, :] + offset[None, :]
-    st = wgs84.latlon(loc["latitude"], loc["longitude"], elevation_m=loc["altitude"])
-    tt = ts.from_datetimes([start + timedelta(seconds=float(r)) for r in relt])
-    sat = EarthSatellite(tle[1], tle[2], tle[0], ts)
-    pos = (sat - st).at(tt)
-    r = pos.position.km
-    v = pos.velocity.km_per_s
-    pred = -np.sum(r * v, axis=0) / np.linalg.norm(r, axis=0) / C * f0
+    wf = load_waterfall(path)
+    f0 = wf.f0_hz
+    freqax = wf.freqax_hz
+    relt = wf.relative_time_s
+    dB = wf.db
+    T, F = dB.shape
+    times = [wf.start + timedelta(seconds=float(r)) for r in relt]
+    rr = geometry.range_rate_km_s(wf.tle[1], wf.tle[2], wf.station, times)
+    pred = geometry.doppler_offset_hz(f0, rr)
     grid = np.arange(-12000, 12000, 50.0)
 
     def profile(curve):
@@ -66,11 +58,11 @@ def analyze(path):
     vp, dp = profile(np.zeros(T)), profile(pred)
     prom = lambda p: (p.max() - np.median(p)) / (np.std(p) + 1e-9)
     return (
-        m["observation_id"],
+        observation_id(path),
         prom(vp),
         prom(dp),
         grid[int(np.argmax(dp))],
-        tle[0].strip(),
+        wf.tle[0].strip(),
     )
 
 

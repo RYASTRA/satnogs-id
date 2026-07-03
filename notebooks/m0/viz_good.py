@@ -3,39 +3,38 @@ vetted-good pass WITHOUT background subtraction and overlay the embedded-TLE pre
 Doppler curve. Vertical signal line + red curve sweeping away from it => corrected."""
 
 import h5py, json, numpy as np
-from datetime import datetime, timedelta
+from datetime import timedelta
 from skyfield.api import load, wgs84, EarthSatellite
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from satnogs_id.shared.waterfall import load_waterfall
+
 C = 299792.458
-f = h5py.File("/data/good.h5", "r")
-m = json.loads(f.attrs["metadata"])
-f0 = float(m["frequency"])
-loc = m["location"]
-tle = m["tle"].strip().splitlines()
-wf = f["waterfall"]
-data = wf["data"][:]
-freqax = wf["frequency"][:].astype(float)
-scale = wf["scale"][:].astype(float)
-offset = wf["offset"][:].astype(float)
-relt = wf["relative_time"][:].astype(float)
-start = datetime.fromisoformat(wf.attrs["start_time"].replace("Z", "+00:00"))
-T, F = data.shape
-print("obs", m["observation_id"], "|", tle[0], "| pass", round(relt[-1] - relt[0]), "s")
-dB = (
-    data.astype(np.float32) * scale[None, :] + offset[None, :]
-)  # per-bin normalized; NO time-median subtraction
+PATH = "/data/good.h5"
+with h5py.File(PATH, "r") as _h:
+    _meta = _h.attrs["metadata"]
+assert isinstance(_meta, (str, bytes, bytearray))
+obs_id = json.loads(_meta)["observation_id"]
+
+wf = load_waterfall(PATH)
+f0 = wf.f0_hz
+freqax = wf.freqax_hz
+relt = wf.relative_time_s
+dB = wf.db  # per-bin normalized; NO time-median subtraction
+T, F = dB.shape
+print("obs", obs_id, "|", wf.tle[0], "| pass", round(relt[-1] - relt[0]), "s")
 
 ts = load.timescale(builtin=True)
-st = wgs84.latlon(loc["latitude"], loc["longitude"], elevation_m=loc["altitude"])
-tt = ts.from_datetimes([start + timedelta(seconds=float(r)) for r in relt])
-sat = EarthSatellite(tle[1], tle[2], tle[0], ts)
+st = wgs84.latlon(wf.station.lat, wf.station.lon, elevation_m=wf.station.alt_m)
+tt = ts.from_datetimes([wf.start + timedelta(seconds=float(rt)) for rt in relt])
+sat = EarthSatellite(wf.tle[1], wf.tle[2], wf.tle[0], ts)
 pos = (sat - st).at(tt)
 r = pos.position.km
 v = pos.velocity.km_per_s
+assert isinstance(r, np.ndarray) and isinstance(v, np.ndarray)
 pred = -np.sum(r * v, axis=0) / np.linalg.norm(r, axis=0) / C * f0
 print(
     "predicted Doppler [%.0f..%.0f] Hz; min range %.0f km"
@@ -68,7 +67,7 @@ for a, (title, overlay) in zip(
     a.set_xlabel("offset from %.4f MHz (Hz)" % (f0 / 1e6))
     a.set_ylabel("time (s)")
     a.set_title(title)
-fig.suptitle("Geoscan-2 obs %d — 85deg pass, vetted with-signal" % m["observation_id"])
+fig.suptitle("Geoscan-2 obs %d — 85deg pass, vetted with-signal" % obs_id)
 fig.tight_layout()
 fig.savefig("/data/good_viz.png", dpi=95)
 print("saved /data/good_viz.png")

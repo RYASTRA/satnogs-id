@@ -30,6 +30,7 @@ def getj(url, auth=False, tries=6):
                 time.sleep(8 * (k + 1))
                 continue
             raise
+    raise RuntimeError(f"gave up after {tries} tries (rate limited): {url}")
 
 
 GEOSCANS = {

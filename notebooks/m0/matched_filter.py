@@ -6,46 +6,34 @@ searching the unknown carrier offset. Demonstrates the two layered noise fixes:
 Compares the Doppler-curve score against a flat zero-Doppler line: if the signal really
 follows the Doppler shape, the curve wins (and that gap is the basis of separability)."""
 
-import h5py, json, numpy as np
-from datetime import datetime, timedelta
-from skyfield.api import load, wgs84, EarthSatellite
+import numpy as np
+from datetime import timedelta
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-C = 299792.458
+from satnogs_id.shared import geometry
+from satnogs_id.shared.waterfall import load_waterfall
 
-f = h5py.File("/data/sample.h5", "r")
-m = json.loads(f.attrs["metadata"])
-f0 = float(m["frequency"])
-loc = m["location"]
-tle = m["tle"].strip().splitlines()
-wf = f["waterfall"]
-data = wf["data"][:]
-freqax = wf["frequency"][:].astype(float)
-scale = wf["scale"][:].astype(float)
-offset = wf["offset"][:].astype(float)
-relt = wf["relative_time"][:].astype(float)
-start = datetime.fromisoformat(wf.attrs["start_time"].replace("Z", "+00:00"))
-T, F = data.shape
-dB = data.astype(np.float32) * scale[None, :] + offset[None, :]
+wf = load_waterfall("/data/sample.h5")
+f0 = wf.f0_hz
+freqax = wf.freqax_hz
+relt = wf.relative_time_s
+dB = wf.db
+T, F = dB.shape
 dB = dB - np.median(dB, axis=0, keepdims=True)  # FIX 1: background subtraction
 
-ts = load.timescale(builtin=True)
-st = wgs84.latlon(loc["latitude"], loc["longitude"], elevation_m=loc["altitude"])
-tt = ts.from_datetimes([start + timedelta(seconds=float(r)) for r in relt])
+times = [wf.start + timedelta(seconds=float(r)) for r in relt]
 
 
-def predicted_offset(l1, l2, name):
-    sat = EarthSatellite(l1, l2, name, ts)
-    pos = (sat - st).at(tt)
-    r = pos.position.km
-    v = pos.velocity.km_per_s
-    return -np.sum(r * v, axis=0) / np.linalg.norm(r, axis=0) / C * f0  # Hz
+def predicted_offset(l1, l2):
+    """Predicted Doppler offset (Hz) over the pass for a candidate's TLE lines."""
+    rr = geometry.range_rate_km_s(l1, l2, wf.station, times)
+    return geometry.doppler_offset_hz(f0, rr)  # Hz
 
 
-pred = predicted_offset(tle[1], tle[2], tle[0])
+pred = predicted_offset(wf.tle[1], wf.tle[2])
 
 # FIX 2: matched filter. For a carrier offset df, take the max power in a small window
 # around the curve at each time, average over the pass.
