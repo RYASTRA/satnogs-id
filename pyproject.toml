@@ -4,21 +4,21 @@ version = "0.1.0"
 description = "Post-launch object identification from multi-station SatNOGS Doppler (wraps strf/rffit)"
 requires-python = ">=3.10"
 dependencies = [
-    "requests>=2.31",
-    "numpy>=1.24",
-    "scipy>=1.10",
-    "skyfield>=1.45",
-    "h5py>=3.8",
-    "datasets>=2.18",
-    "huggingface_hub>=0.23",
-    "gradio>=4.0",
+    "requests>=2.34.2",
+    "numpy>=2.2.6",
+    "scipy>=1.15.3",
+    "skyfield>=1.54",
+    "h5py>=3.16.0",
+    "datasets>=5.0.0",
+    "huggingface_hub>=1.24.0",
+    "gradio>=6.20.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=9.1.1"]
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=83.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
