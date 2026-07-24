@@ -47,7 +47,7 @@ observation epoch (current CelesTrak elements identify a ~6-week-old pass cleanl
 ## Artifact on the Hugging Face Hub
 
 This project wraps `strf`/`rffit` and trains **no model**, so — unlike the sibling
-[satnogs-signal](https://github.com/RYASTRA/satnogs-signal) (which publishes a model *and* a dataset) — the **dataset is
+[satnogs-signal](https://github.com/RYSATNOGS/satnogs-signal) (which publishes a model *and* a dataset) — the **dataset is
 the artifact**: the harvested, labeled Doppler tracks, a ready supervised benchmark for
 near-identical cluster identification.
 

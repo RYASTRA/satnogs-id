@@ -22,7 +22,7 @@ configs:
 
 Labeled **Doppler tracks** extracted from [SatNOGS](https://satnogs.org) waterfall observations, for
 the task of identifying *which* member of a near-identical rideshare cluster produced a given pass.
-Built by [satnogs-id](https://github.com/RYASTRA/satnogs-id), which wraps Cees Bassa's
+Built by [satnogs-id](https://github.com/RYSATNOGS/satnogs-id), which wraps Cees Bassa's
 [strf](https://github.com/cbassa/strf) (`rffit`) — no trained model; the labels come from physics.
 
 ## What's in it
@@ -78,4 +78,4 @@ line from `station_lat/lon/alt_m`.
 ## Credit & license
 
 Data from the [SatNOGS](https://satnogs.org) network + DB (CC BY-SA 4.0). Identification engine:
-[strf](https://github.com/cbassa/strf) (Cees Bassa). Pipeline: [satnogs-id](https://github.com/RYASTRA/satnogs-id).
+[strf](https://github.com/cbassa/strf) (Cees Bassa). Pipeline: [satnogs-id](https://github.com/RYSATNOGS/satnogs-id).
